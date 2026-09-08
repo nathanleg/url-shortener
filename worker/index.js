@@ -1,4 +1,4 @@
-const ALLOWED_ORIGIN = 'https://natesonlineservices.com';
+const ALLOWED_ORIGIN = 'https://theshirtlessdudes.com';
 
 function corsHeaders() {
   return {

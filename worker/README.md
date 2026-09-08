@@ -15,6 +15,6 @@ Paste the printed id into `wrangler.toml`, replacing `REPLACE_WITH_KV_NAMESPACE_
 npx wrangler deploy
 ```
 
-This prints your Worker URL, e.g. `https://natesonlineservices-api.<your-subdomain>.workers.dev`.
+This prints your Worker URL, e.g. `https://theshirtlessdudes-api.<your-subdomain>.workers.dev`.
 Put that exact URL into `../config.js` as `API_BASE`, then commit and push
 so GitHub Pages picks up the change.
