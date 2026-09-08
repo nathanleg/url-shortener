@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nate's URL Shortener</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    max-width: 560px;
+    margin: 60px auto;
+    padding: 0 20px;
+    background: #f7f7f8;
+    color: #1a1a1a;
+  }
+  h1 { font-size: 22px; margin-bottom: 20px; }
+  form { display: flex; gap: 8px; margin-bottom: 8px; }
+  input[type="text"], input[type="url"] {
+    flex: 1;
+    padding: 10px 12px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    font-size: 15px;
+  }
+  .row { display: flex; gap: 8px; margin-bottom: 20px; }
+  .row input[type="text"] { flex: 0 0 140px; }
+  button {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    background: #2563eb;
+    color: white;
+    font-size: 15px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button:hover { background: #1d4ed8; }
+  .error { color: #d33; font-size: 14px; margin: -4px 0 16px; min-height: 1em; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li {
+    background: white;
+    padding: 12px 14px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  }
+  .top { display: flex; align-items: center; gap: 10px; }
+  .short { font-weight: 600; color: #2563eb; text-decoration: none; }
+  .target { color: #888; font-size: 13px; word-break: break-all; margin-top: 4px; }
+  .meta { color: #999; font-size: 12px; margin-top: 4px; }
+  li button.delete {
+    margin-left: auto;
+    background: transparent;
+    color: #d33;
+    padding: 4px 8px;
+    font-size: 18px;
+    line-height: 1;
+  }
+  li button.delete:hover { background: #fee; }
+  .empty { color: #888; text-align: center; padding: 20px 0; }
+  .copy { background: #eee; color: #333; padding: 6px 10px; font-size: 13px; }
+  .copy:hover { background: #ddd; }
+  .setup {
+    background: #fff8e1;
+    border: 1px solid #f0d878;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+</style>
+</head>
+<body>
+  <h1>Nate's URL Shortener</h1>
+  <div class="setup" id="setup-notice" hidden>
+    API backend isn't configured yet. Edit <code>config.js</code> with your deployed Worker URL. See <code>worker/README.md</code>.
+  </div>
+  <form id="add-form">
+    <input type="url" id="url-input" placeholder="https://example.com/long/url" required>
+    <div class="row" style="flex:0;">
+      <input type="text" id="code-input" placeholder="custom code (optional)">
+    </div>
+    <button type="submit">Shorten</button>
+  </form>
+  <div class="error" id="error"></div>
+  <ul id="link-list"></ul>
+
+<script src="config.js"></script>
+<script>
+const list = document.getElementById('link-list');
+const form = document.getElementById('add-form');
+const urlInput = document.getElementById('url-input');
+const codeInput = document.getElementById('code-input');
+const errorEl = document.getElementById('error');
+const setupNotice = document.getElementById('setup-notice');
+
+if (!API_BASE || API_BASE.includes('YOUR-SUBDOMAIN')) {
+  setupNotice.hidden = false;
+}
+
+async function loadLinks() {
+  try {
+    const res = await fetch(`${API_BASE}/links`);
+    const links = await res.json();
+    render(links);
+  } catch (e) {
+    list.innerHTML = '<li class="empty" style="box-shadow:none;background:none;">Could not reach the API backend.</li>';
+  }
+}
+
+function render(links) {
+  list.innerHTML = '';
+  if (links.length === 0) {
+    list.innerHTML = '<li class="empty" style="box-shadow:none;background:none;">No links yet</li>';
+    return;
+  }
+  for (const link of links) {
+    const li = document.createElement('li');
+    const shortUrl = `https://natesurlshortener.online/${link.code}`;
+
+    const top = document.createElement('div');
+    top.className = 'top';
+
+    const a = document.createElement('a');
+    a.className = 'short';
+    a.href = shortUrl;
+    a.target = '_blank';
+    a.textContent = shortUrl.replace(/^https?:\/\//, '');
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'copy';
+    copyBtn.textContent = 'Copy';
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(shortUrl);
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => (copyBtn.textContent = 'Copy'), 1200);
+    });
+
+    const del = document.createElement('button');
+    del.className = 'delete';
+    del.textContent = '×';
+    del.addEventListener('click', () => deleteLink(link.code));
+
+    top.append(a, copyBtn, del);
+
+    const target = document.createElement('div');
+    target.className = 'target';
+    target.textContent = link.url;
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = `${link.clicks} click${link.clicks === 1 ? '' : 's'} · ${new Date(link.createdAt).toLocaleString()}`;
+
+    li.append(top, target, meta);
+    list.appendChild(li);
+  }
+}
+
+async function deleteLink(code) {
+  await fetch(`${API_BASE}/links/${code}`, { method: 'DELETE' });
+  loadLinks();
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  errorEl.textContent = '';
+  const url = urlInput.value.trim();
+  const code = codeInput.value.trim();
+
+  try {
+    const res = await fetch(`${API_BASE}/links`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, code: code || undefined })
+    });
+
+    if (!res.ok) {
+      const data = await res.json();
+      errorEl.textContent = data.error || 'Something went wrong';
+      return;
+    }
+  } catch (e) {
+    errorEl.textContent = 'Could not reach the API backend.';
+    return;
+  }
+
+  urlInput.value = '';
+  codeInput.value = '';
+  loadLinks();
+});
+
+loadLinks();
+</script>
+</body>
+</html>
