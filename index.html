@@ -99,9 +99,13 @@ if (!API_BASE || API_BASE.includes('YOUR-SUBDOMAIN')) {
   setupNotice.hidden = false;
 }
 
+function authHeaders() {
+  return { Authorization: `Bearer ${API_KEY}` };
+}
+
 async function loadLinks() {
   try {
-    const res = await fetch(`${API_BASE}/links`);
+    const res = await fetch(`${API_BASE}/links`, { headers: authHeaders() });
     const links = await res.json();
     render(links);
   } catch (e) {
@@ -158,7 +162,7 @@ function render(links) {
 }
 
 async function deleteLink(code) {
-  await fetch(`${API_BASE}/links/${code}`, { method: 'DELETE' });
+  await fetch(`${API_BASE}/links/${code}`, { method: 'DELETE', headers: authHeaders() });
   loadLinks();
 }
 
@@ -171,7 +175,7 @@ form.addEventListener('submit', async (e) => {
   try {
     const res = await fetch(`${API_BASE}/links`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ url, code: code || undefined })
     });
 
