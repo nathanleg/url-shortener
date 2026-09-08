@@ -178,10 +178,6 @@ loginForm.addEventListener('submit', async (e) => {
   }
 });
 
-if (getToken()) {
-  showApp();
-}
-
 async function loadLinks() {
   try {
     const res = await fetch(`${API_BASE}/links`, { headers: authHeaders() });
@@ -277,7 +273,9 @@ form.addEventListener('submit', async (e) => {
   loadLinks();
 });
 
-loadLinks();
+if (getToken()) {
+  showApp();
+}
 </script>
 </body>
 </html>
