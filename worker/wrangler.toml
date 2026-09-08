@@ -1,4 +1,4 @@
-name = "natesurlshortener-api"
+name = "natesonlineservices-api"
 main = "index.js"
 compatibility_date = "2024-09-01"
 

@@ -1,4 +1,4 @@
-const ALLOWED_ORIGIN = 'https://natesurlshortener.online';
+const ALLOWED_ORIGIN = 'https://natesonlineservices.com';
 
 function corsHeaders() {
   return {
