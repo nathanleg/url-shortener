@@ -2,6 +2,10 @@ import { z } from 'zod';
 
 const ALLOWED_ORIGIN = 'https://theshirtlessdudes.com';
 
+const LoginSchema = z.object({
+  password: z.string().min(1),
+});
+
 const CreateLinkSchema = z.object({
   url: z.string().url().refine((s) => /^https?:$/.test(new URL(s).protocol), {
     message: 'url must be http or https',
@@ -36,7 +40,7 @@ function makeCode() {
 }
 
 // Constant-time comparison, hashed first so length differences don't leak via timing.
-async function verifyApiKey(provided, expected) {
+async function timingSafeStringEqual(provided, expected) {
   const encoder = new TextEncoder();
   const [providedHash, expectedHash] = await Promise.all([
     crypto.subtle.digest('SHA-256', encoder.encode(provided)),
@@ -49,7 +53,20 @@ async function isAuthorized(request, env) {
   const auth = request.headers.get('Authorization') || '';
   const match = auth.match(/^Bearer\s+(.+)$/i);
   if (!match || !env.API_KEY) return false;
-  return verifyApiKey(match[1], env.API_KEY);
+  return timingSafeStringEqual(match[1], env.API_KEY);
+}
+
+const LOGIN_ATTEMPT_LIMIT = 20;
+
+// Caps total login attempts per day so a guessed password can't be brute-forced online.
+async function checkLoginAttempts(env) {
+  const day = new Date().toISOString().slice(0, 10);
+  const key = `loginattempts:${day}`;
+  const count = parseInt((await env.LINKS.get(key)) || '0', 10);
+  if (count >= LOGIN_ATTEMPT_LIMIT) return false;
+
+  await env.LINKS.put(key, String(count + 1), { expirationTtl: 172800 });
+  return true;
 }
 
 const DAILY_LIMIT = 10;
@@ -84,6 +101,23 @@ export default {
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders() });
+    }
+
+    // POST /login - exchange the site password for the session token
+    if (pathname === '/login' && request.method === 'POST') {
+      if (!(await checkLoginAttempts(env))) {
+        return json({ error: 'too many login attempts today, try again tomorrow' }, 429);
+      }
+
+      const body = await request.json().catch(() => null);
+      const parsed = LoginSchema.safeParse(body);
+      if (!parsed.success) return json({ error: 'password is required' }, 400);
+
+      if (!env.SITE_PASSWORD || !(await timingSafeStringEqual(parsed.data.password, env.SITE_PASSWORD))) {
+        return json({ error: 'incorrect password' }, 401);
+      }
+
+      return json({ token: env.API_KEY });
     }
 
     // GET /links - list all links (owner only)

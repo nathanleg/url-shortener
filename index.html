@@ -69,6 +69,14 @@
     font-size: 13px;
     margin-bottom: 20px;
   }
+  #login-gate form { margin-bottom: 8px; }
+  #login-gate input[type="password"] {
+    flex: 1;
+    padding: 10px 12px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    font-size: 15px;
+  }
 </style>
 </head>
 <body>
@@ -76,18 +84,35 @@
   <div class="setup" id="setup-notice" hidden>
     API backend isn't configured yet. Edit <code>config.js</code> with your deployed Worker URL. See <code>worker/README.md</code>.
   </div>
-  <form id="add-form">
-    <input type="url" id="url-input" placeholder="https://example.com/long/url" required>
-    <div class="row" style="flex:0;">
-      <input type="text" id="code-input" placeholder="custom code (optional)">
-    </div>
-    <button type="submit">Shorten</button>
-  </form>
-  <div class="error" id="error"></div>
-  <ul id="link-list"></ul>
+
+  <div id="login-gate">
+    <form id="login-form">
+      <input type="password" id="password-input" placeholder="Password" required autofocus>
+      <button type="submit">Unlock</button>
+    </form>
+    <div class="error" id="login-error"></div>
+  </div>
+
+  <div id="app" hidden>
+    <form id="add-form">
+      <input type="url" id="url-input" placeholder="https://example.com/long/url" required>
+      <div class="row" style="flex:0;">
+        <input type="text" id="code-input" placeholder="custom code (optional)">
+      </div>
+      <button type="submit">Shorten</button>
+    </form>
+    <div class="error" id="error"></div>
+    <ul id="link-list"></ul>
+  </div>
 
 <script src="config.js"></script>
 <script>
+const loginGate = document.getElementById('login-gate');
+const loginForm = document.getElementById('login-form');
+const passwordInput = document.getElementById('password-input');
+const loginError = document.getElementById('login-error');
+const app = document.getElementById('app');
+
 const list = document.getElementById('link-list');
 const form = document.getElementById('add-form');
 const urlInput = document.getElementById('url-input');
@@ -99,13 +124,68 @@ if (!API_BASE || API_BASE.includes('YOUR-SUBDOMAIN')) {
   setupNotice.hidden = false;
 }
 
+function getToken() {
+  return localStorage.getItem('shortener_token');
+}
+
+function setToken(token) {
+  localStorage.setItem('shortener_token', token);
+}
+
+function clearToken() {
+  localStorage.removeItem('shortener_token');
+}
+
+function showApp() {
+  loginGate.hidden = true;
+  app.hidden = false;
+  loadLinks();
+}
+
+function showLoginGate(message) {
+  clearToken();
+  app.hidden = true;
+  loginGate.hidden = false;
+  loginError.textContent = message || '';
+}
+
 function authHeaders() {
-  return { Authorization: `Bearer ${API_KEY}` };
+  return { Authorization: `Bearer ${getToken()}` };
+}
+
+loginForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  loginError.textContent = '';
+
+  try {
+    const res = await fetch(`${API_BASE}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: passwordInput.value }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      loginError.textContent = data.error || 'Something went wrong';
+      return;
+    }
+
+    setToken(data.token);
+    passwordInput.value = '';
+    showApp();
+  } catch (e) {
+    loginError.textContent = 'Could not reach the API backend.';
+  }
+});
+
+if (getToken()) {
+  showApp();
 }
 
 async function loadLinks() {
   try {
     const res = await fetch(`${API_BASE}/links`, { headers: authHeaders() });
+    if (res.status === 401) return showLoginGate('Session expired, please log in again.');
     const links = await res.json();
     render(links);
   } catch (e) {
@@ -162,7 +242,8 @@ function render(links) {
 }
 
 async function deleteLink(code) {
-  await fetch(`${API_BASE}/links/${code}`, { method: 'DELETE', headers: authHeaders() });
+  const res = await fetch(`${API_BASE}/links/${code}`, { method: 'DELETE', headers: authHeaders() });
+  if (res.status === 401) return showLoginGate('Session expired, please log in again.');
   loadLinks();
 }
 
@@ -178,6 +259,8 @@ form.addEventListener('submit', async (e) => {
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ url, code: code || undefined })
     });
+
+    if (res.status === 401) return showLoginGate('Session expired, please log in again.');
 
     if (!res.ok) {
       const data = await res.json();
