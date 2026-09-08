@@ -84,12 +84,20 @@ async function checkRateLimit(env) {
   return true;
 }
 
-// Requires a valid API key and enforces the shared daily usage cap; returns an
-// error Response to short-circuit the request, or null when the call may proceed.
-async function authorize(request, env) {
+// Requires a valid API key; returns an error Response to short-circuit the
+// request, or null when the call may proceed.
+async function requireAuth(request, env) {
   if (!(await isAuthorized(request, env))) return json({ error: 'unauthorized' }, 401);
+  return null;
+}
+
+// Same as requireAuth, but also enforces the daily cap on state-changing calls
+// (create/delete) so viewing the list on every page load doesn't burn quota.
+async function authorize(request, env) {
+  const authError = await requireAuth(request, env);
+  if (authError) return authError;
   if (!(await checkRateLimit(env))) {
-    return json({ error: `API key limited to ${DAILY_LIMIT} requests per day` }, 429);
+    return json({ error: `Limited to ${DAILY_LIMIT} link changes per day` }, 429);
   }
   return null;
 }
@@ -120,9 +128,9 @@ export default {
       return json({ token: env.API_KEY });
     }
 
-    // GET /links - list all links (owner only)
+    // GET /links - list all links (owner only, not rate-limited since it's just a read)
     if (pathname === '/links' && request.method === 'GET') {
-      const authError = await authorize(request, env);
+      const authError = await requireAuth(request, env);
       if (authError) return authError;
 
       const list = await env.LINKS.list({ prefix: 'link:' });
