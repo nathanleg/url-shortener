@@ -27,11 +27,33 @@ function corsHeaders() {
   };
 }
 
+function securityHeaders() {
+  return {
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+    'Content-Security-Policy': "default-src 'none'",
+  };
+}
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders() },
+    headers: { 'Content-Type': 'application/json', ...corsHeaders(), ...securityHeaders() },
   });
+}
+
+// Restricts admin endpoints (login, link management) to a fixed IP allowlist.
+// Fails closed: if ALLOWED_IPS isn't configured, admin routes are blocked entirely
+// rather than silently left open. The public /lookup/:code redirect is unaffected.
+function isAllowedIp(request, env) {
+  const allowed = (env.ALLOWED_IPS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (allowed.length === 0) return false;
+  const ip = request.headers.get('CF-Connecting-IP') || '';
+  return allowed.includes(ip);
 }
 
 function makeCode() {
@@ -111,6 +133,12 @@ export default {
       return new Response(null, { headers: corsHeaders() });
     }
 
+    // Public route: short-link redirects must work for every visitor, not just the owner.
+    const isPublicRoute = pathname.startsWith('/lookup/');
+    if (!isPublicRoute && !isAllowedIp(request, env)) {
+      return json({ error: 'not found' }, 404);
+    }
+
     // POST /login - exchange the site password for the session token
     if (pathname === '/login' && request.method === 'POST') {
       if (!(await checkLoginAttempts(env))) {
@@ -181,7 +209,7 @@ export default {
       if (!existing) return json({ error: 'not found' }, 404);
 
       await env.LINKS.delete(`link:${code}`);
-      return new Response(null, { status: 204, headers: corsHeaders() });
+      return new Response(null, { status: 204, headers: { ...corsHeaders(), ...securityHeaders() } });
     }
 
     // GET /lookup/:code - public, used by 404.html to resolve a short code for anyone
